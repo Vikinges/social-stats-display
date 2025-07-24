@@ -9,32 +9,35 @@ ESP8266WebServer server(80);
 
 String htmlForm(const Settings &settings) {
     int n = WiFi.scanNetworks();
+    String apiDefault = "https://linart.club/youtube.php";
+    String ssidDefault = settings.ssid.length() ? settings.ssid : "MyWiFi";
+    String passwordDefault = settings.password.length() ? settings.password : "";
+    String apiUrlDefault = settings.apiUrl.length() ? settings.apiUrl : apiDefault;
     String html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>Device Setup</title><style>body{font-family:Arial,sans-serif;background:#f0f4fa;margin:0;}.container{max-width:400px;margin:40px auto;background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);padding:32px;}h2{color:#2a5dff;margin-bottom:24px;}label{display:block;margin-top:16px;color:#333;font-weight:bold;}select,input[type='text'],input[type='password'],input[type='url']{width:100%;padding:8px;margin-top:4px;border:1px solid #ccc;border-radius:6px;}input[type='submit']{background:#2a5dff;color:#fff;border:none;padding:10px 24px;border-radius:6px;margin-top:24px;cursor:pointer;font-size:1em;}input[type='submit']:hover{background:#1a3db8;}.section{margin-bottom:32px;}.divider{border-top:1px solid #eee;margin:32px 0;}</style></head><body><div class='container'><h2>WiFi & API Setup</h2><form method='POST' action='/save'>";
     html += "<label for='ssid_select'>WiFi SSID</label>";
     html += "<select id='ssid_select' name='ssid_select' onchange=\"document.getElementById('ssid').value=this.value;\" style='margin-bottom:8px;'>";
     html += "<option value=''";
     if (settings.ssid == "") html += " selected";
-    html += ">Выберите сеть...</option>";
+    html += ">Select network...</option>";
     for (int i = 0; i < n; i++) {
         String ssid = WiFi.SSID(i);
         html += "<option value='" + ssid + "'";
-        if (settings.ssid == ssid) html += " selected";
+        if (ssidDefault == ssid) html += " selected";
         html += ">" + ssid + "</option>";
     }
     html += "</select>";
-    html += "<input type='text' id='ssid' name='ssid' placeholder='SSID вручную' value='" + settings.ssid + "'>";
+    html += "<input type='text' id='ssid' name='ssid' placeholder='Enter SSID manually' value='" + ssidDefault + "'>";
     html += "<label for='password'>WiFi Password</label>";
-    html += "<input type='password' id='password' name='password' value='" + settings.password + "' required>";
-    String apiDefault = settings.apiUrl.length() ? settings.apiUrl : "https://linart.club/youtube.php";
+    html += "<input type='password' id='password' name='password' value='" + passwordDefault + "' required placeholder='Enter WiFi password'>";
     html += "<label for='apiUrl'>API URL</label>";
-    html += "<input type='url' id='apiUrl' name='apiUrl' value='" + apiDefault + "' required>";
+    html += "<input type='url' id='apiUrl' name='apiUrl' value='" + apiUrlDefault + "' required placeholder='https://linart.club/youtube.php'>";
     html += "<input type='submit' value='Save'>";
     html += "</form><div class='divider'></div>";
     html += "<h2>OTA Update</h2><form method='POST' action='/update' enctype='multipart/form-data'>";
     html += "<input type='file' name='update' required><input type='submit' value='Upload firmware'></form>";
     html += "<div class='divider'></div><h2>Change AP Password</h2><form method='POST' action='/ap_password'>";
     html += "<label for='ap_password'>New AP Password</label>";
-    html += "<input type='password' id='ap_password' name='ap_password' value='" + settings.password + "' required>";
+    html += "<input type='password' id='ap_password' name='ap_password' value='" + passwordDefault + "' required placeholder='Enter new AP password'>";
     html += "<input type='submit' value='Change AP Password'></form></div></body></html>";
     return html;
 }
