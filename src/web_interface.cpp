@@ -1,40 +1,44 @@
 #include "web_interface.h"
 #include <ESP8266WebServer.h>
-#include "storage.h"
-
 #include <Updater.h>
+#include <DNSServer.h>
+extern Settings settings;
+extern DNSServer dnsServer;
 
 ESP8266WebServer server(80);
 
 String htmlForm(const Settings &settings) {
-    String html = "<html><head><title>Setup</title>"
-        "<style>body{font-family:sans-serif;background:#f4f4f4;margin:0;padding:0;}"
-        ".container{max-width:400px;margin:40px auto;background:#fff;padding:24px 32px 32px 32px;border-radius:12px;box-shadow:0 2px 12px #0002;}"
-        "h2{margin-top:0;}label{display:block;margin:12px 0 4px;}input,select{width:100%;padding:8px;margin-bottom:12px;border-radius:4px;border:1px solid #ccc;}button,input[type=submit]{background:#1976d2;color:#fff;border:none;padding:10px 0;border-radius:4px;font-size:1em;cursor:pointer;width:100%;margin-top:8px;}button:hover,input[type=submit]:hover{background:#1565c0;}hr{margin:32px 0 24px;}</style></head><body><div class='container'>";
-    html += "<h2>Wi-Fi and API Setup</h2>";
-    html += "<form method='POST' action='/save'>";
     int n = WiFi.scanNetworks();
-    html += "<label>WiFi SSID:</label><select name='ssid'>";
-    for (int i = 0; i < n; ++i) {
-        String ssid = WiFi.SSID(i);
-        html += "<option value='" + ssid + "'";
-        if (ssid == settings.ssid) html += " selected";
-        html += ">" + ssid + "</option>";
-    }
+    String html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>Device Setup</title><style>body{font-family:Arial,sans-serif;background:#f0f4fa;margin:0;}.container{max-width:400px;margin:40px auto;background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);padding:32px;}h2{color:#2a5dff;margin-bottom:24px;}label{display:block;margin-top:16px;color:#333;font-weight:bold;}select,input[type='text'],input[type='password'],input[type='url']{width:100%;padding:8px;margin-top:4px;border:1px solid #ccc;border-radius:6px;}input[type='submit']{background:#2a5dff;color:#fff;border:none;padding:10px 24px;border-radius:6px;margin-top:24px;cursor:pointer;font-size:1em;}input[type='submit']:hover{background:#1a3db8;}.section{margin-bottom:32px;}.divider{border-top:1px solid #eee;margin:32px 0;}</style></head><body><div class='container'><h2>WiFi & API Setup</h2><form method='POST' action='/save'>";
+    html += "<label for='ssid_select'>WiFi SSID</label>";
+    html += "<select id='ssid_select' name='ssid_select' onchange=\"document.getElementById('ssid').value=this.value;\" style='margin-bottom:8px;'>";
     html += "<option value=''";
     if (settings.ssid == "") html += " selected";
-    html += ">Other...</option></select>";
-    html += "<input name='ssid' placeholder='Enter SSID' value='" + settings.ssid + "'>";
-    html += "<label>WiFi Password:</label><input name='password' type='password' value='" + settings.password + "'>";
+    html += ">Выберите сеть...</option>";
+    for (int i = 0; i < n; i++) {
+        String ssid = WiFi.SSID(i);
+        html += "<option value='" + ssid + "'";
+        if (settings.ssid == ssid) html += " selected";
+        html += ">" + ssid + "</option>";
+    }
+    html += "</select>";
+    html += "<input type='text' id='ssid' name='ssid' placeholder='SSID вручную' value='" + settings.ssid + "'>";
+    html += "<label for='password'>WiFi Password</label>";
+    html += "<input type='password' id='password' name='password' value='" + settings.password + "' required>";
     String apiDefault = settings.apiUrl.length() ? settings.apiUrl : "https://linart.club/youtube.php";
-    html += "<label>API URL:</label><input name='apiUrl' value='" + apiDefault + "'>";
-    html += "<input type='submit' value='Save'></form>";
-    html += "<hr><h2>OTA Update</h2>";
-    html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
-    html += "<input type='file' name='update'><input type='submit' value='Upload firmware'></form>";
-    html += "</div></body></html>";
+    html += "<label for='apiUrl'>API URL</label>";
+    html += "<input type='url' id='apiUrl' name='apiUrl' value='" + apiDefault + "' required>";
+    html += "<input type='submit' value='Save'>";
+    html += "</form><div class='divider'></div>";
+    html += "<h2>OTA Update</h2><form method='POST' action='/update' enctype='multipart/form-data'>";
+    html += "<input type='file' name='update' required><input type='submit' value='Upload firmware'></form>";
+    html += "<div class='divider'></div><h2>Change AP Password</h2><form method='POST' action='/ap_password'>";
+    html += "<label for='ap_password'>New AP Password</label>";
+    html += "<input type='password' id='ap_password' name='ap_password' value='" + settings.password + "' required>";
+    html += "<input type='submit' value='Change AP Password'></form></div></body></html>";
     return html;
 }
+
 void handleUpdateUpload() {
     HTTPUpload& upload = server.upload();
     if (upload.status == UPLOAD_FILE_START) {
@@ -58,10 +62,21 @@ void setupOTA(ESP8266WebServer &server) {
     }, handleUpdateUpload);
 }
 
-void handleRoot() {
-    Settings s;
-    loadSettings(s);
-    server.send(200, "text/html", htmlForm(s));
+void handleApPassword() {
+  if (server.hasArg("ap_password")) {
+    String newPass = server.arg("ap_password");
+    if (newPass.length() >= 8) {
+      settings.password = newPass;
+      saveSettings(settings);
+      WiFi.softAP(settings.ssid.c_str(), settings.password.c_str());
+      server.send(200, "text/html", "<html><body>AP password changed!<br><a href='/'>Back</a></body></html>");
+      return;
+    } else {
+      server.send(200, "text/html", "<html><body>Password must be at least 8 characters.<br><a href='/'>Back</a></body></html>");
+      return;
+    }
+  }
+  server.send(200, "text/html", "<html><body>Error: No password provided.<br><a href='/'>Back</a></body></html>");
 }
 
 void handleSave() {
@@ -75,16 +90,21 @@ void handleSave() {
     ESP.restart();
 }
 
-// Captive portal: перенаправление всех HTTP-запросов на страницу конфигурации
-#include <ESP8266WebServer.h>
-#include <DNSServer.h>
-DNSServer dnsServer;
-
-void handleCaptive() { server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString(), true); server.send(302, "text/plain", ""); }
+void handleCaptive() {
+  String html = "<html><head><meta http-equiv='refresh' content='0; url=http://";
+  html += WiFi.softAPIP().toString();
+  html += "'/></head><body>If the page did not open automatically, <a href='http://";
+  html += WiFi.softAPIP().toString();
+  html += "'>click here</a>.</body></html>";
+  server.send(200, "text/html", html);
+}
 
 void handleWebRequests(ESP8266WebServer &server, Settings &settings) {
-    server.on("/", HTTP_GET, handleRoot);
+    server.on("/", HTTP_GET, [&]() {
+        server.send(200, "text/html", htmlForm(settings));
+    });
     server.on("/save", HTTP_POST, handleSave);
+    server.on("/ap_password", HTTP_POST, handleApPassword);
     setupOTA(server);
     // Captive portal: перенаправление всех путей на /
     server.onNotFound(handleCaptive);
@@ -95,11 +115,16 @@ void startWebInterface() {
     loadSettings(s);
     handleWebRequests(server, s);
     server.begin();
-    // Captive portal DNS: перенаправлять все DNS-запросы на ESP8266
-    dnsServer.start(53, "", WiFi.softAPIP());
-    while (true) {
-        dnsServer.processNextRequest();
-        server.handleClient();
-        delay(1);
+    // Captive portal DNS: запускать только если ESP в режиме AP
+    if (WiFi.getMode() == WIFI_AP) {
+        dnsServer.start(53, "*", WiFi.softAPIP());
     }
+    // Теперь обработка запросов будет из loop() main.cpp
 }
+
+
+void webInterfaceLoop() {
+    server.handleClient();
+}
+
+

@@ -1,6 +1,8 @@
 
 
+
 #include <Arduino.h>
+#include <DNSServer.h>
 #include <ESP8266WiFi.h>
 
 #include "hardware_init.h"
@@ -10,6 +12,9 @@
 #include "display_logic.h"
 #include "api_client.h"
 #include "failover.h"
+
+DNSServer dnsServer;
+const byte DNS_PORT = 53;
 
 // Глобальные переменные
 Settings settings;
@@ -75,8 +80,67 @@ void setup() {
 void loop() {
   static unsigned long lastUpdate = 0;
   static uint8_t failCount = 0;
+  // Обработка кнопки FLASH
+  static unsigned long flashPressStart = 0;
+  static bool flashCounting = false;
+  static bool flashActionPending = false;
+  static uint8_t prevMode = WIFI_STA; // 0: STA, 1: AP
   const uint8_t maxApiFails = 3;
+  bool inAPMode = (WiFi.getMode() == WIFI_AP);
+
+  if (digitalRead(0) == LOW) {
+    if (!flashCounting) {
+      flashPressStart = millis();
+      flashCounting = true;
+      prevMode = WiFi.getMode();
+      flashActionPending = true;
+    }
+    unsigned long held = (millis() - flashPressStart) / 1000;
+    if (inAPMode) {
+      showMessage(String("AP Reset: ") + held + "s", "FLASH");
+      if (held >= 5) {
+        // Сброс настроек и перезагрузка
+        showMessage("Resetting...", "DEFAULT");
+        resetSettings();
+        delay(500);
+        ESP.restart();
+        while (true) delay(10); // Ждём перезагрузки
+      }
+    } else {
+      showMessage(String("Hold: ") + held + "s", "FLASH");
+      if (held >= 5) {
+        // Запуск режима конфигурации
+        showMessage("Config mode", "AP");
+        startAPMode();
+        startWebInterface();
+        while (digitalRead(0) == LOW) delay(10); // Ждём отпускания
+        flashCounting = false;
+        flashActionPending = false;
+        return;
+      }
+    }
+    delay(100);
+    return;
+  } else {
+    if (flashCounting && flashActionPending) {
+      // FLASH отпущена до истечения таймера
+      // Возврат к предыдущему режиму/экрану
+      if (prevMode == WIFI_STA) {
+        showStats(subs, views, "OK");
+      } else {
+        showMessage("WiFi setup", "AP Mode");
+      }
+      flashCounting = false;
+      flashActionPending = false;
+    }
+  }
+
+  // Captive portal: обслуживаем DNS только в режиме AP
+  if (WiFi.getMode() == WIFI_AP) {
+    dnsServer.processNextRequest();
+  }
   // Обработка web-интерфейса (OTA и настройка)
+  webInterfaceLoop();
   yield();
   // Если в режиме AP/web-интерфейса — просто обслуживаем сервер
   // (web_interface.cpp: startWebInterface содержит свой цикл)
