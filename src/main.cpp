@@ -1,9 +1,11 @@
 
 
 
+
 #include <Arduino.h>
 #include <DNSServer.h>
 #include <ESP8266WiFi.h>
+#include <EEPROM.h>
 
 #include "hardware_init.h"
 #include "wifi_manager.h"
@@ -21,6 +23,8 @@ Settings settings;
 uint8_t wifiAttempts = 0;
 const uint8_t maxWifiAttempts = 3;
 uint32_t subs = 0, views = 0;
+int subsToday = 0, viewsToday = 0;
+uint32_t prevSubs = 0;
 bool apiOk = false;
 
 
@@ -34,6 +38,14 @@ void setup() {
     startAPMode();
     startWebInterface();
     return;
+  }
+
+  // Читаем предыдущее значение подписчиков из EEPROM
+  EEPROM.begin(8);
+  // Чтение 4 байт из EEPROM как uint32_t
+  prevSubs = 0;
+  for (int i = 0; i < 4; i++) {
+    prevSubs |= (EEPROM.read(i) << (8 * i));
   }
 
   // Пробуем подключиться к Wi-Fi
@@ -72,8 +84,17 @@ void setup() {
     return;
   }
 
+  // Вычисляем прирост подписчиков за 24ч
+  subsToday = subs - prevSubs;
+  // Сохраняем новое значение подписчиков в EEPROM
+  // Запись 4 байт subs в EEPROM
+  for (int i = 0; i < 4; i++) {
+    EEPROM.write(i, (subs >> (8 * i)) & 0xFF);
+  }
+  EEPROM.commit();
+
   // Всё ок — показываем статистику
-  showStats(subs, views, "OK");
+  showStats(subs, views, subsToday, viewsToday, "OK");
 }
 
 
@@ -110,7 +131,7 @@ void loop() {
       showMessage(String("Hold: ") + held + "s", "FLASH");
       if (held >= 5) {
         // Запуск режима конфигурации
-        showMessage("Config mode", "AP");
+    showStats(subs, views, subsToday, viewsToday, "OK");
         startAPMode();
         startWebInterface();
         while (digitalRead(0) == LOW) delay(10); // Ждём отпускания
@@ -126,7 +147,7 @@ void loop() {
       // FLASH отпущена до истечения таймера
       // Возврат к предыдущему режиму/экрану
       if (prevMode == WIFI_STA) {
-        showStats(subs, views, "OK");
+        showStats(subs, views, subsToday, viewsToday, "OK");
       } else {
         showMessage("WiFi setup", "AP Mode");
       }
@@ -150,7 +171,13 @@ void loop() {
     if (millis() - lastUpdate > 60000) {
       showProgressAnimation("API");
       if (fetchYouTubeStats(subs, views)) {
-        showStats(subs, views, "OK");
+        subsToday = subs - prevSubs;
+        prevSubs = subs;
+        for (int i = 0; i < 4; i++) {
+          EEPROM.write(i, (subs >> (8 * i)) & 0xFF);
+        }
+        EEPROM.commit();
+        showStats(subs, views, subsToday, viewsToday, "OK");
         failCount = 0;
       } else {
         failCount++;

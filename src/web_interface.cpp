@@ -7,6 +7,9 @@ extern DNSServer dnsServer;
 
 ESP8266WebServer server(80);
 
+extern uint32_t subs, views;
+extern int subsToday, viewsToday;
+
 String htmlForm(const Settings &settings) {
     int n = WiFi.scanNetworks();
     String apiDefault = "https://linart.club/youtube.php";
@@ -33,6 +36,10 @@ String htmlForm(const Settings &settings) {
     html += "<input type='url' id='apiUrl' name='apiUrl' value='" + apiUrlDefault + "' required placeholder='https://linart.club/youtube.php'>";
     html += "<input type='submit' value='Save'>";
     html += "</form><div class='divider'></div>";
+    html += "<h2>Statistics</h2>";
+    html += "<div><b>Subscribers:</b> " + String(subs) + " (" + (subsToday > 0 ? "+" + String(subsToday) : "0") + " today)</div>";
+    html += "<div><b>Views:</b> " + String(views) + " (" + (viewsToday > 0 ? "+" + String(viewsToday) : "0") + " today)</div>";
+    html += "<div class='divider'></div>";
     html += "<h2>OTA Update</h2><form method='POST' action='/update' enctype='multipart/form-data'>";
     html += "<input type='file' name='update' required><input type='submit' value='Upload firmware'></form>";
     html += "<div class='divider'></div><h2>Change AP Password</h2><form method='POST' action='/ap_password'>";
